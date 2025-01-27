@@ -6,6 +6,9 @@
 #define SUSPENDED false
 #define AWAKENED true
 
+unsigned long last_suspended = 0;
+unsigned long last_awakened = 0;
+
 extern WebServer server;
 
 void routes();

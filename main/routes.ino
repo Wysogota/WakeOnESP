@@ -19,38 +19,51 @@ bool waitUntil(bool suspended) {
   return true;
 }
 
-/* STATUS */
-void handleStatus() {
-  const String status = TinyUSBDevice.suspended() ? "suspended" : "active";
-
+auto createResponse(char* status, char* message) {
   JSONVar response;
   response["status"] = status;
+  response["message"] = message;
+  response["timestamp"] = getTime();
+  return response;
+}
+
+/* STATUS */
+void handleStatus() {
+  JSONVar response;
+  response["status"] = TinyUSBDevice.suspended() ? "suspended" : "active";
   response["usb_mounted"] = TinyUSBDevice.mounted();
+  response["last_awakened"] = last_awakened;
+  response["last_suspended"] = last_suspended;
   response["timestamp"] = getTime();
   String sResponse = JSON.stringify(response);
+
 
   server.send(200, "application/json", sResponse);
 }
 
 /* WAKE UP */
 void handleSuspendOn() {
-  const bool succeeded = sendWakeUpSignal();
-  JSONVar response;
   int statusCode;
+  JSONVar response;
 
-  if (succeeded) {
-    response["status"] = "ok";
-    response["message"] = "Operation successful: system is now active.";
-    statusCode = 200;
-  } else {
-    response["status"] = "error";
-    response["message"] = "Operation conflict: system already awake.";
+  if (!TinyUSBDevice.suspended()) {
     statusCode = 409;
+    response = createResponse("error", "Operation conflict: system already awake.");
+
+  } else {
+    const bool succeeded = sendWakeUpSignal();
+    if (succeeded) {
+      statusCode = 200;
+      response = createResponse("ok", "Operation successful: system is now active.");
+      last_awakened = response["timestamp"];
+    } else {
+      statusCode = 408;
+      response = createResponse("error", "Operation error: Timeout");
+    }
   }
 
-  response["timestamp"] = getTime();
   String sResponse = JSON.stringify(response);
-  server.send(200, "application/json", sResponse);
+  server.send(statusCode, "application/json", sResponse);
 }
 
 bool sendWakeUpSignal() {
@@ -61,23 +74,26 @@ bool sendWakeUpSignal() {
 
 /* SUSPEND */
 void handleSuspendOff() {
-  const bool succeeded = sendSuspendSignal();
-  JSONVar response;
   int statusCode;
+  JSONVar response;
 
-  if (succeeded) {
-    response["status"] = "ok";
-    response["message"] = "Operation successful: system is now suspended.";
-    statusCode = 200;
-  } else {
-    response["status"] = "error";
-    response["message"] = "Operation conflict: system already suspended.";
+  if (TinyUSBDevice.suspended()) {
     statusCode = 409;
+    response = createResponse("error", "Operation conflict: system already suspended.");
+  } else {
+    const bool succeeded = sendSuspendSignal();
+    if (succeeded) {
+      statusCode = 200;
+      response = createResponse("ok", "Operation successful: system is now suspended.");
+      last_suspended = response["timestamp"];
+    } else {
+      statusCode = 408;
+      response = createResponse("error", "Operation error: Timeout");
+    }
   }
 
-  response["timestamp"] = getTime();
   String sResponse = JSON.stringify(response);
-  server.send(200, "application/json", sResponse);
+  server.send(statusCode, "application/json", sResponse);
 }
 
 bool sendSuspendSignal() {
